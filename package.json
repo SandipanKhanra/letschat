@@ -18,5 +18,8 @@
     "url": "https://github.com/SandipanKhanra/letschat/issues"
   },
   "homepage": "https://github.com/SandipanKhanra/letschat#readme",
-  "description": ""
+  "description": "",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
 }
