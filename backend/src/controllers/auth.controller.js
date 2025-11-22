@@ -8,10 +8,21 @@ import {
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
 } from "../lib/utils.js";
+import { sendWelcomeEmail } from "../emails/emailHandler.js";
+import "dotenv/config";
 
-const REFRESH_TOKEN_EXPIRES_MS = process.env.REFRESH_TOKEN_EXPIRES_MS
-  ? Number(process.env.REFRESH_TOKEN_EXPIRES_MS)
-  : 7 * 24 * 60 * 60 * 1000; // default 7 days
+const DEFAULT_REFRESH_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const REFRESH_TOKEN_EXPIRES_MS = (() => {
+  const raw = process.env.REFRESH_TOKEN_EXPIRES_MS;
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_REFRESH_MS;
+})();
+
+const computeExpiry = (ms) => {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return new Date(Date.now() + n);
+};
 
 /**
  * Signup a new user, save hashed password, issue access and refresh tokens.
@@ -53,6 +64,16 @@ export const signup = async (req, res) => {
 
   await newUser.save();
 
+  try {
+    await sendWelcomeEmail(
+      newUser.email,
+      newUser.fullName,
+      process.env.CLIENT_URL
+    );
+  } catch (error) {
+    console.error("Failed to send welcome email ❌");
+  }
+
   // Issue tokens
   const accessToken = createAccessToken(newUser._id, { expiresIn: "15m" });
   setAccessTokenCookie(res, accessToken, { maxAge: 15 * 60 * 1000 });
@@ -61,7 +82,7 @@ export const signup = async (req, res) => {
   const refreshHash = hashToken(refreshTokenPlain);
   newUser.refreshTokens.push({
     tokenHash: refreshHash,
-    expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_MS),
+    expiresAt: computeExpiry(REFRESH_TOKEN_EXPIRES_MS),
     used: false,
     meta: { ip: req.ip, ua: req.get("user-agent") },
   });
@@ -108,7 +129,7 @@ export const login = async (req, res) => {
   );
   user.refreshTokens.push({
     tokenHash: refreshHash,
-    expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_MS),
+    expiresAt: computeExpiry(REFRESH_TOKEN_EXPIRES_MS),
     used: false,
     meta: { ip: req.ip, ua: req.get("user-agent") },
   });
@@ -173,7 +194,7 @@ export const refreshToken = async (req, res) => {
   const newRefreshHash = hashToken(newRefreshPlain);
   user.refreshTokens.push({
     tokenHash: newRefreshHash,
-    expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_MS),
+    expiresAt: computeExpiry(REFRESH_TOKEN_EXPIRES_MS),
     used: false,
     meta: { ip: req.ip, ua: req.get("user-agent") },
   });
