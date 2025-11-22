@@ -24,6 +24,26 @@ const computeExpiry = (ms) => {
   return new Date(Date.now() + n);
 };
 
+const MAX_ACTIVE_SESSIONS = 4; // Limit to 4 concurrent sessions per user
+
+const pruneOldTokens = (tokens) => {
+  if (!tokens || !Array.isArray(tokens)) return [];
+
+  // Step 1: Remove expired tokens
+  let activeRefreshTokens = tokens.filter(
+    (rt) => !rt.expiresAt || rt.expiresAt > new Date()
+  );
+
+  // Step 2: If we have MAX_ACTIVE_SESSIONS or more, keep only the newest ones
+  if (activeRefreshTokens.length >= MAX_ACTIVE_SESSIONS) {
+    activeRefreshTokens = activeRefreshTokens
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) // newest first
+      .slice(0, MAX_ACTIVE_SESSIONS - 1); // keep space for new token
+  }
+
+  return activeRefreshTokens;
+};
+
 /**
  * Signup a new user, save hashed password, issue access and refresh tokens.
  */
@@ -80,6 +100,8 @@ export const signup = async (req, res) => {
 
   const refreshTokenPlain = createRefreshToken();
   const refreshHash = hashToken(refreshTokenPlain);
+  // Prune old sessions (keep max 4 active)
+  newUser.refreshTokens = pruneOldTokens(newUser.refreshTokens || []);
   newUser.refreshTokens.push({
     tokenHash: refreshHash,
     expiresAt: computeExpiry(REFRESH_TOKEN_EXPIRES_MS),
@@ -123,10 +145,8 @@ export const login = async (req, res) => {
   // Create and store refresh token (rotate)
   const refreshTokenPlain = createRefreshToken();
   const refreshHash = hashToken(refreshTokenPlain);
-  // Remove expired tokens
-  user.refreshTokens = (user.refreshTokens || []).filter(
-    (rt) => !rt.expiresAt || rt.expiresAt > new Date()
-  );
+  // Prune old sessions (keep max 4 active)
+  user.refreshTokens = pruneOldTokens(user.refreshTokens || []);
   user.refreshTokens.push({
     tokenHash: refreshHash,
     expiresAt: computeExpiry(REFRESH_TOKEN_EXPIRES_MS),
