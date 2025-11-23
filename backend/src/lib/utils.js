@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import { ENV } from "./env.js";
 
 const COOKIE_NAME = "jwt";
 const DEFAULT_ACCESS_EXPIRES = "15m"; // short-lived access token by default
@@ -9,7 +10,7 @@ export function createAccessToken(
   userId,
   {
     expiresIn = DEFAULT_ACCESS_EXPIRES,
-    secret = process.env.JWT_SECRET,
+    secret = ENV.JWT_SECRET,
     algorithm = "HS256",
   } = {}
 ) {
@@ -29,7 +30,7 @@ export function setAccessTokenCookie(
     name = COOKIE_NAME,
     maxAge = LEGACY_COOKIE_MAX_AGE,
     httpOnly = true,
-    secure = process.env.NODE_ENV === "production",
+    secure = ENV.NODE_ENV === "production",
     sameSite = "lax",
     path = "/",
   } = {}
@@ -73,7 +74,7 @@ export function setRefreshTokenCookie(
     name = "refresh_token",
     maxAge = 7 * 24 * 60 * 60 * 1000,
     httpOnly = true,
-    secure = process.env.NODE_ENV === "production",
+    secure = ENV.NODE_ENV === "production",
     sameSite = "lax",
     path = "/",
   } = {}
@@ -99,4 +100,30 @@ export function clearRefreshTokenCookie(
   res.clearCookie(name, { path });
 }
 
-export default { createAccessToken, setAccessTokenCookie, generateToken };
+/**
+ * Verify an access JWT and normalize the payload.
+ * Returns an object that always includes `userId` (derived from `sub`).
+ */
+export function verifyAccessToken(
+  token,
+  { secret = ENV.JWT_SECRET, algorithms = ["HS256"] } = {}
+) {
+  if (!secret) {
+    throw new Error("JWT_SECRET environment variable is not set");
+  }
+
+  const payload = jwt.verify(token, secret, { algorithms });
+  // Normalize commonly used id fields onto `userId`
+  return { ...payload, userId: payload.sub ?? payload.userId ?? payload.id };
+}
+
+export default {
+  createAccessToken,
+  setAccessTokenCookie,
+  generateToken,
+  createRefreshToken,
+  hashToken,
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
+  verifyAccessToken,
+};
