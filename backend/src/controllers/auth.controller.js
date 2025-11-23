@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import User from "../models/User.js";
+import { cloudinary } from "../lib/cloudinary.js";
 import {
   createAccessToken,
   createRefreshToken,
@@ -9,11 +10,11 @@ import {
   clearRefreshTokenCookie,
 } from "../lib/utils.js";
 import { sendWelcomeEmail } from "../emails/emailHandler.js";
-import "dotenv/config";
+import { ENV } from "../lib/env.js";
 
 const DEFAULT_REFRESH_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const REFRESH_TOKEN_EXPIRES_MS = (() => {
-  const raw = process.env.REFRESH_TOKEN_EXPIRES_MS;
+  const raw = ENV.REFRESH_TOKEN_EXPIRES_MS;
   const n = raw ? Number(raw) : NaN;
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_REFRESH_MS;
 })();
@@ -85,11 +86,7 @@ export const signup = async (req, res) => {
   await newUser.save();
 
   try {
-    await sendWelcomeEmail(
-      newUser.email,
-      newUser.fullName,
-      process.env.CLIENT_URL
-    );
+    await sendWelcomeEmail(newUser.email, newUser.fullName, ENV.CLIENT_URL);
   } catch (error) {
     console.error("Failed to send welcome email ❌");
   }
@@ -244,4 +241,29 @@ export const logout = async (req, res) => {
   // also clear access cookie
   res.clearCookie("jwt", { path: "/" });
   res.json({ message: "Logged out" });
+};
+
+export const updateProfile = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { profilePic } = req.body;
+    if (!profilePic) {
+      return res.status(400).json({ message: "Profile picture is required" });
+    }
+    const uploadResponse = await cloudinary.uploader.upload(profilePic, {
+      folder: "profile_pics",
+    });
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        profilePic: uploadResponse.secure_url,
+      },
+      { new: true }
+    );
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    console.error("Error updating profile:", error);
+    res.status(500).json({ message: "Server error" });
+  }
 };
